@@ -197,19 +197,20 @@ function getEfficiencyColor(eff) {
     return '#ef4444'; // Red
 }
 
-// --- LIVE HPC HARDWARE SIMULATION ---
+// --- LIVE HPC HARDWARE SIMULATION (DUAL-VIEW) ---
 document.addEventListener('DOMContentLoaded', () => {
-    const canvas = document.getElementById('sim-canvas');
-    if (!canvas) return; 
-    const ctx = canvas.getContext('2d');
+    const canvasSeq = document.getElementById('sim-canvas-seq');
+    const canvasPar = document.getElementById('sim-canvas-par');
+    if (!canvasSeq || !canvasPar) return; 
+    
+    const ctxSeq = canvasSeq.getContext('2d');
+    const ctxPar = canvasPar.getContext('2d');
     
     // Config
-    const NUM_THREADS = 16;
     const GRID_COLS = 32;
     const GRID_ROWS = 18;
     const TOTAL_TILES = GRID_COLS * GRID_ROWS;
     
-    // Thread Colors (Distinct bright colors)
     const THREAD_COLORS = [
         '#ef4444', '#f97316', '#f59e0b', '#eab308', 
         '#84cc16', '#22c55e', '#10b981', '#14b8a6', 
@@ -217,139 +218,155 @@ document.addEventListener('DOMContentLoaded', () => {
         '#8b5cf6', '#a855f7', '#d946ef', '#f43f5e'
     ];
 
-    let tiles = [];
-    let threadsArr = [];
     let simActive = false;
-    let nextUnprocessed = 0; 
-    let tilesCompleted = 0;
+    
+    // Sequential State (1 Thread)
+    let seqState = {
+        tiles: [],
+        thread: { x: -1, y: 0.5, targetTile: null, workTimeRemaining: 0, color: '#94a3b8' },
+        nextUnprocessed: 0,
+        tilesCompleted: 0
+    };
 
-    // Responsive Canvas
-    function resizeCanvas() {
-        canvas.width = canvas.parentElement.clientWidth;
-        canvas.height = canvas.parentElement.clientHeight;
-        drawGrid(); 
+    // Parallel State (16 Threads)
+    let parState = {
+        tiles: [],
+        threads: [],
+        nextUnprocessed: 0,
+        tilesCompleted: 0
+    };
+
+    function resizeCanvases() {
+        canvasSeq.width = canvasSeq.parentElement.clientWidth;
+        canvasSeq.height = canvasSeq.parentElement.clientHeight;
+        canvasPar.width = canvasPar.parentElement.clientWidth;
+        canvasPar.height = canvasPar.parentElement.clientHeight;
+        drawGrid(ctxSeq, canvasSeq, seqState.tiles, [seqState.thread]);
+        drawGrid(ctxPar, canvasPar, parState.tiles, parState.threads);
     }
-    window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('resize', resizeCanvases);
     
     function initSim() {
         simActive = false;
-        nextUnprocessed = 0;
-        tilesCompleted = 0;
-        document.getElementById('sim-done').textContent = '0';
         
-        // Reset Tiles
-        tiles = [];
+        // Reset Sequential
+        seqState.nextUnprocessed = 0;
+        seqState.tilesCompleted = 0;
+        seqState.tiles = [];
         for (let y = 0; y < GRID_ROWS; y++) {
             for (let x = 0; x < GRID_COLS; x++) {
-                tiles.push({ x, y, state: 'idle', color: '#1e293b' }); 
+                seqState.tiles.push({ x, y, state: 'idle', color: '#1e293b' });
             }
         }
-        
-        // Init Threads
-        threadsArr = [];
-        for (let i = 0; i < NUM_THREADS; i++) {
-            threadsArr.push({
-                id: i,
-                color: THREAD_COLORS[i],
-                x: -1, 
-                y: (GRID_ROWS / NUM_THREADS) * i + 0.5,
-                targetTile: null,
-                workTimeRemaining: 0
+        seqState.thread = { x: -1, y: 0.5, targetTile: null, workTimeRemaining: 0, color: '#94a3b8' };
+        document.getElementById('sim-done-seq').textContent = '0';
+
+        // Reset Parallel
+        parState.nextUnprocessed = 0;
+        parState.tilesCompleted = 0;
+        parState.tiles = [];
+        for (let y = 0; y < GRID_ROWS; y++) {
+            for (let x = 0; x < GRID_COLS; x++) {
+                parState.tiles.push({ x, y, state: 'idle', color: '#1e293b' });
+            }
+        }
+        parState.threads = [];
+        for (let i = 0; i < 16; i++) {
+            parState.threads.push({
+                id: i, color: THREAD_COLORS[i], x: -1, y: (GRID_ROWS / 16) * i + 0.5,
+                targetTile: null, workTimeRemaining: 0
             });
         }
+        document.getElementById('sim-done-par').textContent = '0';
         
-        resizeCanvas();
+        resizeCanvases();
     }
     
-    function drawGrid() {
+    function drawGrid(ctx, canvas, tiles, threads) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         const tileW = canvas.width / GRID_COLS;
         const tileH = canvas.height / GRID_ROWS;
         
-        // Draw Tiles
         for (let t of tiles) {
             ctx.fillStyle = t.color;
             ctx.fillRect(t.x * tileW + 1, t.y * tileH + 1, tileW - 2, tileH - 2);
-            
-            // Subtle glow if done
             if (t.state === 'done') {
                 ctx.fillStyle = 'rgba(255,255,255,0.1)';
                 ctx.fillRect(t.x * tileW + 1, t.y * tileH + 1, tileW - 2, tileH - 2);
             }
         }
         
-        // Draw Threads
-        if (simActive || tilesCompleted > 0) {
-            for (let th of threadsArr) {
+        if (simActive || tiles.length > 0) {
+            for (let th of threads) {
                 if (th.x >= 0) {
                     ctx.beginPath();
                     ctx.arc((th.x + 0.5) * tileW, (th.y + 0.5) * tileH, Math.min(tileW, tileH) * 0.4, 0, Math.PI * 2);
                     ctx.fillStyle = th.color;
                     ctx.fill();
                     ctx.strokeStyle = '#fff';
-                    ctx.lineWidth = 2;
+                    ctx.lineWidth = 1;
                     ctx.stroke();
                 }
             }
         }
     }
     
-    function simLoop() {
-        if (!simActive) {
-            drawGrid();
-            return;
-        }
+    function stepSimulation() {
+        if (!simActive) return;
 
+        let seqDone = stepEnvironment(seqState, [seqState.thread], 'seq');
+        let parDone = stepEnvironment(parState, parState.threads, 'par');
+
+        drawGrid(ctxSeq, canvasSeq, seqState.tiles, [seqState.thread]);
+        drawGrid(ctxPar, canvasPar, parState.tiles, parState.threads);
+
+        if (seqDone && parDone) {
+            simActive = false; 
+        } else {
+            requestAnimationFrame(stepSimulation);
+        }
+    }
+
+    function stepEnvironment(state, threads, type) {
         let allDone = true;
 
-        for (let th of threadsArr) {
+        for (let th of threads) {
             if (!th.targetTile && th.targetTile !== 0) {
-                if (nextUnprocessed < TOTAL_TILES) {
-                    // Dynamic Scheduling: Grab next available tile globally
-                    th.targetTile = nextUnprocessed++;
-                    tiles[th.targetTile].state = 'active';
-                    tiles[th.targetTile].color = '#334155'; // working color
-                    th.workTimeRemaining = 5 + Math.random() * 20; // Simulated latency
-                    
-                    // Teleport agent
-                    th.x = tiles[th.targetTile].x;
-                    th.y = tiles[th.targetTile].y;
+                if (state.nextUnprocessed < TOTAL_TILES) {
+                    th.targetTile = state.nextUnprocessed++;
+                    state.tiles[th.targetTile].state = 'active';
+                    state.tiles[th.targetTile].color = '#334155';
+                    // Sequential logic applies a fixed latency. Parallel naturally scales!
+                    th.workTimeRemaining = 5 + Math.random() * 20; 
+                    th.x = state.tiles[th.targetTile].x;
+                    th.y = state.tiles[th.targetTile].y;
                     allDone = false;
                 }
             } else {
                 allDone = false;
                 th.workTimeRemaining--;
                 if (th.workTimeRemaining <= 0) {
-                    tiles[th.targetTile].state = 'done';
-                    tiles[th.targetTile].color = th.color; // Brand the tile with thread color
+                    state.tiles[th.targetTile].state = 'done';
+                    state.tiles[th.targetTile].color = th.color; 
                     th.targetTile = null;
-                    tilesCompleted++;
-                    document.getElementById('sim-done').textContent = Math.floor((tilesCompleted/TOTAL_TILES)*100);
+                    state.tilesCompleted++;
+                    document.getElementById(`sim-done-${type}`).textContent = Math.floor((state.tilesCompleted/TOTAL_TILES)*100);
                 }
             }
         }
         
-        drawGrid();
-
-        if (allDone && tilesCompleted === TOTAL_TILES) {
-            simActive = false; 
-        } else {
-            requestAnimationFrame(simLoop);
-        }
+        return (allDone && state.tilesCompleted === TOTAL_TILES);
     }
 
     document.getElementById('start-sim-btn').addEventListener('click', () => {
         if (!simActive) {
-            if (tilesCompleted === TOTAL_TILES) initSim();
+            if (seqState.tilesCompleted === TOTAL_TILES) initSim();
             simActive = true;
-            simLoop();
+            stepSimulation();
         }
     });
 
-    document.getElementById('reset-sim-btn').addEventListener('click', () => {
-        initSim();
-    });
+    document.getElementById('reset-sim-btn').addEventListener('click', () => initSim());
 
-    // Start
     setTimeout(initSim, 100);
 });
