@@ -8,7 +8,7 @@
 **Visual/Heading:** 
 * Ignite-HPC: Real-Time Parallel Image Processing Engine
 * Built for Intelligent Transport Systems (ITS)
-* Team Members: Divyansh, Tanu Meena, Hanmant, Krupal
+* Team Members: Divyansh, Tanu Meena, Hanmant, Vishal
 
 **🗣️ Speaking Notes:**
 "Good morning Ma'am. Aaj hum apne High-Performance Computing (HPC) project ko present kar rahe hain: **Ignite-HPC**. Yeh ek Real-Time Parallel Image Processing Engine hai jise humne Intelligent Transport Systems, jaise highway traffic monitoring, ki speed aur scalability ko badhane ke liye design kiya hai."
