@@ -64,7 +64,7 @@ Want to run this beast of a pipeline on your own machine? It takes less than 10 
 
 **1. Clone the repository**
 ```bash
-git clone https://github.com/divyanshkumar06/Ignite-HPC.git
+git clone https://github.com/vkg6835/Ignite-HPC.git
 cd Ignite-HPC/parallel_image_processing
 ```
 
